@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bili MP3 Downloader",
-  "version": "1.6",
+  "version": "1.7",
   "description": "发送 B 站收藏夹 HTML 到本地接收端",
   "permissions": [
     "activeTab",
