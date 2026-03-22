@@ -24,5 +24,9 @@
 1. 调用 `buildextension.ps1` 打包 `bili-downloader.zip`
 1. 上传 `bili-downloader.zip` 审核 
 1. 审核完成, 下载 `xpi` 文件，保存为 `bili-mp3-downloader.xpi`
-1. 上传更新代码
-1. 用户在扩展列表中更新扩展
+1. github 上新建 `release` 并上传 `bili-mp3-downloader.xpi`
+1. 得到新的 `bili-mp3-downloader.xpi` 下载地址
+1. 将下载地址更新到 `updates.json`
+1. 清理 `bili-downloader.zip` 与 `bili-mp3-downloader.xpi`
+1. 签入代码
+1. 用户等待扩展更新=生效后更新扩展

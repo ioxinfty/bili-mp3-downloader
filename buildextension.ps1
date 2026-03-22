@@ -14,8 +14,9 @@ if (-not (Test-Path $manifestPath)) { Throw "找不到 manifest.json 文件！" 
 $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 $currentVersion = $manifest.version
 $addonId = $manifest.browser_specific_settings.gecko.id
-$updateUrl = $manifest.browser_specific_settings.gecko.update_url
-$updateLink = $updateUrl -replace "updates.json", "bili-mp3-downloader.xpi"
+# $updateUrl = $manifest.browser_specific_settings.gecko.update_url
+$updateLink = "https://github.com/ioxinfty/bili-mp3-downloader/releases/download/v$($currentVersion)/bili-mp3-downloader.xpi"
+
 
 # --- 2. 更新 updates.json 中的版本号和链接 ---
 $updateDict = @{
