@@ -27,7 +27,7 @@ $updateDict = @{
     }
 }
 $updateDict | ConvertTo-Json -Depth 10 | Out-File $updatesPath -Encoding UTF8
-Write-Host "已更新 updates.json 文件" -ForegroundColor Green
+Write-Host "已更新 updates.json 文件: $currentVersion" -ForegroundColor Green
 
 # --- 3. 打包扩展 ---
 if (Test-Path $zipFile) { Remove-Item $zipFile }

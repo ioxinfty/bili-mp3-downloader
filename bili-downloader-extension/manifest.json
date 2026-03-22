@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bili MP3 Downloader",
-  "version": "1.1",
+  "version": "1.4",
   "description": "发送 B 站收藏夹 HTML 到本地接收端",
   "permissions": [
     "activeTab",
@@ -14,8 +14,12 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "bili-mp3-downloader@iox.com",
-      "strict_min_version": "109.0",
-      "update_url": "https://raw.githubusercontent.com/ioxinfty/bili-mp3-downloader/updates.json"
+      "strict_min_version": "142.0",
+      "update_url": "https://raw.githubusercontent.com/ioxinfty/bili-mp3-downloader/updates.json",
+      "data_collection_permissions": {
+        "copy_on_install": false,
+        "required": ["none"]
+      }
     }
   },
   "icons": {
