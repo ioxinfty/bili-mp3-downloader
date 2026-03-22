@@ -1,8 +1,8 @@
 {
   "addons": {
     "bili-mp3-downloader@iox.com": {
-      "updates_url": "https://raw.githubusercontent.com/ioxinfty/bili-mp3-downloader/bili-mp3-downloader.xpi",
-      "update_link": "1.4"
+      "update_link": "1.6",
+      "updates_url": "https://raw.githubusercontent.com/ioxinfty/bili-mp3-downloader/main/bili-mp3-downloader.xpi"
     }
   }
 }
