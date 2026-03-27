@@ -111,8 +111,8 @@ class BbDownloader {
         $tmpDir = Join-Path $([System.IO.Path]::GetTempPath()) -ChildPath $([System.IO.Path]::GetRandomFileName())
         New-Item -Path $tmpDir -ItemType Directory | Out-Null
         
-        Set-Location $tmpDir
         Write-Host "切换临时目录 $tmpDir"
+        Set-Location $tmpDir        
 
         try {
         
@@ -158,12 +158,14 @@ class BbDownloader {
         # 创建输出目录
         New-Item $outputDir -ItemType Directory -Force | Out-Null
 
+        Push-Location
+
         # 创建临时目录
         $tmpDir = Join-Path $([System.IO.Path]::GetTempPath()) -ChildPath $([System.IO.Path]::GetRandomFileName())
         New-Item -Path $tmpDir -ItemType Directory | Out-Null
-
-        Push-Location
+        
         Write-Host "切换临时目录 $tmpDir"
+        Set-Location $tmpDir
 
         try {
         
@@ -206,7 +208,6 @@ class BbDownloader {
             try {
 
                 # 分析视频标题
-                Set-Location $tmpDir # 因为下面的函数使用了当前目录
                 $videoTitle = $this.GetVideoTitle($url)
                 $mp3Name = $this.GetSafeFileName($videoTitle, "_")
                 $mp3SaveFile = Join-Path $outputDir -ChildPath "$mp3Name.mp3"

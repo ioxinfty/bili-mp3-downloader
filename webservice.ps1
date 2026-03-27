@@ -48,7 +48,7 @@ try {
 
                         # 提取参数
                         $type = $data.type         # 'collection' 或 'single_link'
-                        $content = $data.content   # HTML 或 URL
+                        $urls = $data.content   # HTML 或 URL
                         $mode = $data.mode         # 'tv', 'app', 'intl' 等
                         $isMp3 = $data.isMp3       # $true 或 $false
                         $singleOnly = $data.singleOnly # 是否仅下一首
@@ -71,24 +71,11 @@ try {
 
                         $bbDownloader.singleOnly = $singleOnly
 
-                        if ($type -eq "collection") {
-                            # 从 html 中解析出链接
-                            $urls = $bbDownloader.ParseUrlsFromContent($taregtDir, $content)
-
-                            if ($isMp3) {
-                                $bbDownloader.DownloadMp3s($urls, $taregtDir)
-                            }
-                            else {
-                                $bbDownloader.DownloadVideos($urls, $taregtDir)
-                            }
+                        if ($isMp3) {
+                            $bbDownloader.DownloadMp3s($urls, $taregtDir)
                         }
                         else {
-                            if ($isMp3) {
-                                $bbDownloader.DownloadMp3($content, $taregtDir)
-                            }
-                            else {
-                                $bbDownloader.DownloadVideo($content, $taregtDir)
-                            }
+                            $bbDownloader.DownloadVideos($urls, $taregtDir)
                         }
 
                         write-host "下载完成"
@@ -115,7 +102,7 @@ try {
                     continue
                 }
 
-                if($state -eq 'Failed'){      
+                if ($state -eq 'Failed') {      
                     Write-Error "任务 $($job.Id) 运行出错：$($job.JobStateInfo.Reason.Message)"
                 }
 
