@@ -105,11 +105,13 @@ class BbDownloader {
         # 创建输出目录
         New-Item $outputDir -ItemType Directory -Force | Out-Null
 
+        Push-Location
+
         # 创建临时目录
         $tmpDir = Join-Path $([System.IO.Path]::GetTempPath()) -ChildPath $([System.IO.Path]::GetRandomFileName())
         New-Item -Path $tmpDir -ItemType Directory | Out-Null
-
-        Push-Location
+        
+        Set-Location $tmpDir
         Write-Host "切换临时目录 $tmpDir"
 
         try {
@@ -127,10 +129,14 @@ class BbDownloader {
         finally {
         
             Pop-Location
-            Remove-Item $tmpDir -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 
         }
 
+    }
+
+    [void] SetMode($mode) {
+        $this.downloadMode = "$mode".ToLower()
     }
 
     # 批量下载视频
@@ -243,24 +249,35 @@ class BbDownloader {
         $fileName = [System.IO.Path]::GetFileName($file)
         $outputFile = Join-Path $outputDir -ChildPath $fileName
  
-        Move-Item $file -Destination $outputFile -Force
+        write-host "移动文件 $file 到 $outputFile"
+        Move-Item -LiteralPath $file -Destination $outputFile -Force
+
+        if(-not $(test-path $outputFile)) {
+            write-error "文件移动失败: $file"   
+        }        
     }
  
     # 使用 ffmpeg 转换视频
     [string] ConvertVideoToMp3([string]$videoFile) {
+      
  
         $mp3File = [System.IO.Path]::ChangeExtension($videoFile, ".mp3")
  
         # 构建 FFmpeg 参数数组（这种方式处理特殊字符路径最稳健）
+        # 这里有推荐的一种转方法参数
+        # https://blog.longwin.com.tw/2024/09/linux-ffmpeg-mp4-mp3-convert-2024/ 
+        # ffmpeg -i video.mp4 -vn -acodec libmp3lame -ac 2 -ab 320k -ar 48000 audio.mp3
         $ffmpegArgs = @(
             "-hide_banner",          # 隐藏版本和编译信息
             "-loglevel", "error",    # 只显示错误，不输出过程日志
-            "-nostdin",              # 禁用标准输入，防止在脚本运行中卡死
+            # "-nostdin",              # 禁用标准输入，防止在脚本运行中卡死
             "-i", $videoFile,        # 输入文件
             "-vn",                   # 禁用视频流
             "-acodec", "libmp3lame", # 使用 mp3 编码器
-            "-qscale:a", "0",        # 最高质量 VBR
+            # "-qscale:a", "0",        # 最高质量 VBR
             "-ac", "2",              # 双声道
+            "-ab", "320k",           # 320kbps
+            "-ar", "48000",          # 48kHz
             $mp3File,                # 输出文件
             "-y"                     # 自动覆盖已存在文件
         )
@@ -273,6 +290,8 @@ class BbDownloader {
         if ($LASTEXITCODE -ne 0) {
             throw "FFmpeg 转换失败，退出码: $LASTEXITCODE"
         }
+
+        write-host "转换完成: $mp3File" -ForegroundColor Green
  
         return $mp3File
     }
@@ -347,6 +366,9 @@ class BbDownloader {
 
     # 下载的模式, tv (tv 端模式), app （app 端格式）, intl （国际片模式）
     [string]$downloadMode = ''
+
+    # 是否只下载一首
+    [bool]$singleOnly
  
     # 使用 bbdown 下载视频, 并得到 视频文件
     # 这里使用到了相对目录
@@ -358,7 +380,22 @@ class BbDownloader {
             $bbdownArgs += "-$($this.downloadMode)"
         }
 
+        if ($this.singleOnly) {
+            
+            # 解析出 url 中的 p 如果， 如果不存在则返回 1
+            if ($url -match 'p=(?<page>\d+)') {
+                $p = [int]$Matches['page']
+            }
+            else {
+                $p = 1
+            }
+
+            $bbdownArgs += "-p $($p)"
+        }
+
         $bbdownArgs += $url
+
+        Write-Host "下载参数 $bbdownArgs"
 
         & BBDown @bbdownArgs 2>&1 | Out-Host 
  
@@ -469,11 +506,9 @@ if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.InvocationName -ne '
     }
 
     $bbDownloader = [BbDownloader]::new()
-
+    
     # 下载模式
-    if ($DownloadMode) {
-        $bbDownloader.downloadMode = $DownloadMode.ToLower()
-    }
+    $bbDownloader.SetMode($DownloadMode)
 
     # 输出路径
     $targetDir = $PSScriptRoot
