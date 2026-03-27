@@ -17,7 +17,6 @@
       "strict_min_version": "142.0",
       "update_url": "https://raw.githubusercontent.com/ioxinfty/bili-mp3-downloader/main/updates.json",
       "data_collection_permissions": {
-        // "copy_on_install": false,
         "required": ["none"]
       }
     }
