@@ -1,4 +1,5 @@
 # 构建扩展包 提交 https://addons.mozilla.org/zh-CN/developers/
+# 调试扩展包 about:debugging#/runtime/this-firefox
 
 $ErrorActionPreference = "Stop"
 

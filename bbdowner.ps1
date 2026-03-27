@@ -1,8 +1,26 @@
 # 从 bilibili 下载视频并转为 mp3
 # 调用了 bbdown 命令, dotnet tool install -g bbdown, 最好登录一下
 # 调用了 ffmpeg 命令, brew install ffmpeg
- 
-$ErrorActionPreference = 'stop'
+
+# 脚本参数定义
+param(
+    [Parameter(Mandatory = $false, HelpMessage = "下载类型：mp3 或 video，默认 mp3")]
+    [ValidateSet("mp3", "video")]
+    [string]$DownloadType = "mp3",
+
+    [Parameter(Mandatory = $false, HelpMessage = "下载模式：tv (tv 端模式), app (app 端格式), intl (国际模式), 默认空为 pc 模式")]
+    [ValidateSet("tv", "app", "intl")]
+    [string]$DownloadMode = "",
+
+    [Parameter(Mandatory = $false, HelpMessage = "要下载的单个链接, 如果未指定，则解析剪切板中的链接（假设为 html 源代码）")]
+    [string]$Url,
+    
+    [Parameter(Mandatory = $false, HelpMessage = "是否显示帮助信息")]
+    [switch]$Help
+)
+
+
+$ErrorActionPreference = 'stop' 
  
 # 兼容一些低版本的 .net 工具
 $env:DOTNET_ROLL_FORWARD = "LatestMajor"
@@ -80,9 +98,95 @@ class BbDownloader {
 
         throw "解析视频标题失败"
     }
+
+    # 仅下载链接中的视频并转为 mp3，可能是一个视频，可能一个合集
+    [void] DownloadMp3([string]$url, [string]$outputDir) { 
+
+        # 创建输出目录
+        New-Item $outputDir -ItemType Directory -Force | Out-Null
+
+        Push-Location
+
+        # 创建临时目录
+        $tmpDir = Join-Path $([System.IO.Path]::GetTempPath()) -ChildPath $([System.IO.Path]::GetRandomFileName())
+        New-Item -Path $tmpDir -ItemType Directory | Out-Null
+        
+        Write-Host "切换临时目录 $tmpDir"
+        Set-Location $tmpDir        
+
+        try {
+        
+            $this.DownloadVideoFromUrl($url)
+
+            [string[]] $mp4Files = $this.GetDownloadMp4Files($tmpDir)
+
+            foreach ($mp4File in $mp4Files) {
+
+                $mp3File = $this.ConvertVideoToMp3($mp4File)
+                $this.MoveFileToOutputDir($mp3File, $outputDir)
+            }
+        }
+        finally {
+        
+            Pop-Location
+            Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+
+        }
+
+    }
+
+    [void] SetMode($mode) {
+        $this.downloadMode = "$mode".ToLower()
+    }
+
+    # 批量下载视频
+    [void] DownloadVideos([string[]]$urls, [string]$outputDir) {
+
+        # 批量下载视频
+        $count = $urls | Measure-Object | Select-Object -ExpandProperty Count
+        Write-Host "解析出 $count 个链接"
+
+        foreach ($url in $urls) {            
+            $this.DownloadVideo($url, $outputDir)
+        }
+
+    }
+
+    # 仅下载链接中的视频， 可能是单个视频，可能是一个合集
+    [void] DownloadVideo([string]$url, [string]$outputDir) { 
+
+        # 创建输出目录
+        New-Item $outputDir -ItemType Directory -Force | Out-Null
+
+        Push-Location
+
+        # 创建临时目录
+        $tmpDir = Join-Path $([System.IO.Path]::GetTempPath()) -ChildPath $([System.IO.Path]::GetRandomFileName())
+        New-Item -Path $tmpDir -ItemType Directory | Out-Null
+        
+        Write-Host "切换临时目录 $tmpDir"
+        Set-Location $tmpDir
+
+        try {
+        
+            Write-Host "处理链接 $url"
+            $this.DownloadVideoFromUrl($url)
+
+            [string[]] $mp4Files = $this.GetDownloadMp4Files($tmpDir)
+
+            foreach ($mp4File in $mp4Files) {
+                $this.MoveFileToOutputDir($mp4File, $outputDir)
+            }
+        }
+        finally {
+        
+            Pop-Location
+            Remove-Item $tmpDir -Force -ErrorAction SilentlyContinue
+        }
+    }
  
     # 下载链接中的视频并转换为 mp3，保存在输出目录中
-    [void] Download([string[]]$urls, [string]$outputDir) { 
+    [void] DownloadMp3s([string[]]$urls, [string]$outputDir) { 
 
         New-Item $outputDir -ItemType Directory -Force | Out-Null
 
@@ -104,7 +208,6 @@ class BbDownloader {
             try {
 
                 # 分析视频标题
-                Set-Location $tmpDir # 因为下面的函数使用了当前目录
                 $videoTitle = $this.GetVideoTitle($url)
                 $mp3Name = $this.GetSafeFileName($videoTitle, "_")
                 $mp3SaveFile = Join-Path $outputDir -ChildPath "$mp3Name.mp3"
@@ -147,24 +250,35 @@ class BbDownloader {
         $fileName = [System.IO.Path]::GetFileName($file)
         $outputFile = Join-Path $outputDir -ChildPath $fileName
  
-        Move-Item $file -Destination $outputFile -Force
+        write-host "移动文件 $file 到 $outputFile"
+        Move-Item -LiteralPath $file -Destination $outputFile -Force
+
+        if(-not $(test-path $outputFile)) {
+            write-error "文件移动失败: $file"   
+        }        
     }
  
     # 使用 ffmpeg 转换视频
     [string] ConvertVideoToMp3([string]$videoFile) {
+      
  
         $mp3File = [System.IO.Path]::ChangeExtension($videoFile, ".mp3")
  
         # 构建 FFmpeg 参数数组（这种方式处理特殊字符路径最稳健）
+        # 这里有推荐的一种转方法参数
+        # https://blog.longwin.com.tw/2024/09/linux-ffmpeg-mp4-mp3-convert-2024/ 
+        # ffmpeg -i video.mp4 -vn -acodec libmp3lame -ac 2 -ab 320k -ar 48000 audio.mp3
         $ffmpegArgs = @(
             "-hide_banner",          # 隐藏版本和编译信息
             "-loglevel", "error",    # 只显示错误，不输出过程日志
-            "-nostdin",              # 禁用标准输入，防止在脚本运行中卡死
+            # "-nostdin",              # 禁用标准输入，防止在脚本运行中卡死
             "-i", $videoFile,        # 输入文件
             "-vn",                   # 禁用视频流
             "-acodec", "libmp3lame", # 使用 mp3 编码器
-            "-qscale:a", "0",        # 最高质量 VBR
+            # "-qscale:a", "0",        # 最高质量 VBR
             "-ac", "2",              # 双声道
+            "-ab", "320k",           # 320kbps
+            "-ar", "48000",          # 48kHz
             $mp3File,                # 输出文件
             "-y"                     # 自动覆盖已存在文件
         )
@@ -177,6 +291,8 @@ class BbDownloader {
         if ($LASTEXITCODE -ne 0) {
             throw "FFmpeg 转换失败，退出码: $LASTEXITCODE"
         }
+
+        write-host "转换完成: $mp3File" -ForegroundColor Green
  
         return $mp3File
     }
@@ -195,7 +311,17 @@ class BbDownloader {
  
         return $result.Trim()
     }
+
+    # 获取下载的所有 mp4 文件
+    [string[]] GetDownloadMp4Files([string]$dir) {
  
+        $mp4Files = Get-ChildItem -Filter *.mp4 -Recurse 
+
+        return $mp4Files
+ 
+    }
+ 
+    # 获取下载的 mp4 文件
     [string] GetDownloadMp4File([string]$dir) {
  
         $filePath = Get-ChildItem -Path $dir -Filter *.mp4 | Select-Object -First 1 | ForEach-Object { $_.FullName }
@@ -238,14 +364,39 @@ class BbDownloader {
  
         return $filePath
     }
+
+    # 下载的模式, tv (tv 端模式), app （app 端格式）, intl （国际片模式）
+    [string]$downloadMode = ''
+
+    # 是否只下载一首
+    [bool]$singleOnly
  
     # 使用 bbdown 下载视频, 并得到 视频文件
     # 这里使用到了相对目录
     [void] DownloadVideoFromUrl([string]$url) {        
 
-        $bbdownArgs = @(
-            $url
-        )
+        $bbdownArgs = @()
+
+        if ($this.downloadMode) {
+            $bbdownArgs += "-$($this.downloadMode)"
+        }
+
+        if ($this.singleOnly) {
+            
+            # 解析出 url 中的 p 如果， 如果不存在则返回 1
+            if ($url -match 'p=(?<page>\d+)') {
+                $p = [int]$Matches['page']
+            }
+            else {
+                $p = 1
+            }
+
+            $bbdownArgs += "-p $($p)"
+        }
+
+        $bbdownArgs += $url
+
+        Write-Host "下载参数 $bbdownArgs"
 
         & BBDown @bbdownArgs 2>&1 | Out-Host 
  
@@ -322,29 +473,84 @@ class BbDownloader {
 }
 
 
+# 主程序入口
 if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.InvocationName -ne '&') {
+ 
+    # 到这里是直接调用
     
-    # 使用方式
-    # 1. 新建目录，将 bbdowner.ps1 放在目录下
-    # 2. 打开 bilibili 进入收藏夹，按 F12 打开开发者工具，找到包含视频链接的 HTML 节点，右键复制该节点的 HTML 内容
-    # 3. 执行 bbdowner.ps1，程序会从剪切板中的 HTML 内容中解析出链接，下载视频并转换为 mp3，保存在当前目录下的 mp3 文件夹中
-    # 或是直接准备 url 字符串, 一行一个 https://www.bilibili.com/video/BV1vrCdYvEQb?xxxx ，然后调用 $bbDownloader.DownloadFromContentToDesktop($urlContent) 即可
+    # 显示帮助信息
+    function Show-Help {
+        Write-Host "B站视频下载工具" -ForegroundColor Green
+        Write-Host "----------------------------------------"
+        Write-Host "用法：bbdowner.ps1 [-DownloadType <mp3|video>] [-Url <链接>] [-Help]"
+        Write-Host ""
+        Write-Host "参数说明："
+        Write-Host "-DownloadType    指定下载类型：mp3（默认）或 video"
+        Write-Host "-Url             指定要下载的单个链接或是从剪切板中解析链接"
+        Write-Host "-Help            显示此帮助信息"
+        Write-Host ""
+        Write-Host "示例："
+        Write-Host 'bbdowner.ps1 -DownloadType mp3 -Url "https://www.bilibili.com/video/BV1xx411c7XW"'
+        Write-Host 'bbdowner.ps1 -DownloadType video -Url "https://www.bilibili.com/video/BV1xx411c7XW"'
+        Write-Host ""
+        Write-Host "不指定参数时，将从剪贴板解析链接并下载为 mp3"
+    }
 
-    $Content = Get-Clipboard -Raw
+    # 显示帮助信息
+    if ($Help) {
+        Show-Help
+        return
+    }
 
-    # 当前工作目录
-    $targetDir = $PSScriptRoot
-
-    # 保存 mp3 的目录
-    $mp3Dir = Join-Path $targetDir -ChildPath "mp3"
+    if (-not $DownloadType) {
+        $DownloadType = "mp3"
+    }
 
     $bbDownloader = [BbDownloader]::new()
+    
+    # 下载模式
+    $bbDownloader.SetMode($DownloadMode)
 
-    # # 浏览器 f12 , 找到 html 节点，复制整体 html，程序从剪切板中的 html 中解析出链接
-    $urls = $bbDownloader.ParseUrlsFromContent($targetDir, $Content)
+    # 输出路径
+    $targetDir = $PSScriptRoot
+    
+    # 根据下载类型确定输出目录
+    $outputDir = Join-Path $targetDir -ChildPath $DownloadType
+    
+    # 确保输出目录存在
+    New-Item $outputDir -ItemType Directory -Force | Out-Null
+    
+    # 处理下载链接
+    if ($Url) {
+        # 处理单个链接
+        Write-Host "处理链接：$Url" -ForegroundColor Cyan
+        
+        if ($DownloadType -eq "mp3") {
+            $bbDownloader.DownloadMp3($Url, $outputDir)
+        }
+        else {
+            $bbDownloader.DownloadVideo($Url, $outputDir)
+        }
+        
+        Start-Process "open" -ArgumentList $outputDir
+        Write-Host "处理完成"
+    }
+    else {
+        # 从剪贴板解析链接（默认行为）
+        $Content = Get-Clipboard -Raw
+        
+        # 浏览器 f12 , 找到 html 节点，复制整体 html，程序从剪切板中的 html 中解析出链接
+        $urls = $bbDownloader.ParseUrlsFromContent($targetDir, $Content)
+        
+        if ($DownloadType -eq "mp3") {
+            $bbDownloader.DownloadMp3s($urls, $outputDir)
+        }
+        else {
+            $bbDownloader.DownloadVideos($urls, $outputDir)
 
-    # 开始下载链接中的视频并转换为 mp3
-    $bbDownloader.Download($urls, $mp3Dir)
-
+            Start-Process "open" -ArgumentList $outputDir
+            Write-Host "处理完成"
+        }
+    }
 }
 

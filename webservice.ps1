@@ -23,10 +23,10 @@ try {
             
             # 读取 HTML 内容
             $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
-            $html = $reader.ReadToEnd()
+            $jsonString = $reader.ReadToEnd()
             
             # --- 在这里调用你的业务逻辑 ---
-            Write-Host "收到来自 B 站收藏夹的 HTML，长度: $($html.Length)"
+            Write-Host "收到来自 B 站收藏夹的 HTML，长度: $($jsonString.Length)"
 
             $scriptPath = Join-Path $PSScriptRoot "bbdowner.ps1"
             Write-Host "检查脚本路径: $scriptPath"
@@ -35,6 +35,8 @@ try {
             $job = Start-ThreadJob -ScriptBlock {
                 param($scriptPath, $contentData)
 
+                write-host '进入工作线程'
+
                 & {
                     try {
 
@@ -42,28 +44,49 @@ try {
         
                         . $scriptPath
 
+                        $data = $contentData | ConvertFrom-Json
+
+                        # 提取参数
+                        $type = $data.type         # 'collection' 或 'single_link'
+                        $urls = $data.content   # HTML 或 URL
+                        $mode = $data.mode         # 'tv', 'app', 'intl' 等
+                        $isMp3 = $data.isMp3       # $true 或 $false
+                        $singleOnly = $data.singleOnly # 是否仅下一首
+
                         # 当前工作目录
-                        $targetDir = Split-Path -Parent $scriptPath
+                        $targetDirName = "mp3"
+                        if (-not $isMp3) {
+                            $targetDirName = "video"
+                        }
+                        $workingDir = Split-Path -Parent $scriptPath
+                        $taregtDir = Join-Path $workingDir -ChildPath $targetDirName
 
-
-                        # 保存 mp3 的目录
-                        $mp3Dir = Join-Path $targetDir -ChildPath "mp3"
+                        Write-Host "存储目录 $taregtDir"
 
                         $bbDownloader = [BbDownloader]::new()
 
-                        # # 浏览器 f12 , 找到 html 节点，复制整体 html，程序从剪切板中的 html 中解析出链接
-                        $urls = $bbDownloader.ParseUrlsFromContent($targetDir, $contentData)
+                        if ($mode) {
+                            $bbDownloader.SetMode($mode)
+                        }
 
-                        # 开始下载链接中的视频并转换为 mp3
-                        $bbDownloader.Download($urls, $mp3Dir)
+                        $bbDownloader.singleOnly = $singleOnly
+
+                        if ($isMp3) {
+                            $bbDownloader.DownloadMp3s($urls, $taregtDir)
+                        }
+                        else {
+                            $bbDownloader.DownloadVideos($urls, $taregtDir)
+                        }
+
+                        write-host "下载完成"
                     }
                     catch {
-                       write-error  "内部工作出错：$($_.Exception.Message)" 
+                        write-error  "内部工作出错：$($_.Exception.Message)" 
                     }
 
                 } *>&1 | Out-Host
         
-            } -ArgumentList $scriptPath, $html -StreamingHost $Host
+            } -ArgumentList $scriptPath, $jsonString -StreamingHost $Host
 
             Write-Host "已在线程 $($job.Id) 中启动下载任务..." -ForegroundColor Green
 
@@ -79,6 +102,10 @@ try {
                     continue
                 }
 
+                if ($state -eq 'Failed') {      
+                    Write-Error "任务 $($job.Id) 运行出错：$($job.JobStateInfo.Reason.Message)"
+                }
+
                 break
             }
 
@@ -92,6 +119,10 @@ try {
 
         $response.Close()
     }
+}
+catch {
+    Write-Host "错误：$_" -ForegroundColor Red
+    throw
 }
 finally {
     $listener.Stop()
